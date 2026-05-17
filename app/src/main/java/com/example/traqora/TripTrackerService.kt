@@ -73,14 +73,27 @@ class TripTrackerService : LifecycleService(), SensorEventListener {
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             result.lastLocation?.let { location ->
+                // Filter inaccurate locations to prevent GPS drift
+                if (location.hasAccuracy() && location.accuracy > MIN_LOCATION_ACCURACY_METERS) {
+                    Log.d(TAG, "Ignoring inaccurate location update: accuracyM=${location.accuracy}")
+                    return
+                }
+
+                // Apply speed deadband
+                val processedLocation = Location(location).apply {
+                    if (hasSpeed() && speed < MIN_SPEED_DEADBAND_MPS) {
+                        speed = 0f
+                    }
+                }
+
                 val previousLocation = lastLocation
-                lastLocation = location
-                TripLiveState.updateLocation(location, previousLocation)
-                persistLocationUpdate(location)
+                lastLocation = processedLocation
+                TripLiveState.updateLocation(processedLocation, previousLocation)
+                persistLocationUpdate(processedLocation)
                 Log.d(
                     TAG,
-                    "Location update: lat=${location.latitude}, lon=${location.longitude}, " +
-                        "speedMps=${location.speed}, accuracyM=${location.accuracy}"
+                    "Location update: lat=${processedLocation.latitude}, lon=${processedLocation.longitude}, " +
+                        "speedMps=${processedLocation.speed}, accuracyM=${processedLocation.accuracy}"
                 )
             }
         }
@@ -112,6 +125,12 @@ class TripTrackerService : LifecycleService(), SensorEventListener {
 
     override fun onSensorChanged(event: SensorEvent?) {
         if (event?.sensor?.type != Sensor.TYPE_ACCELEROMETER) return
+
+        // Ignore harsh events if the vehicle is not moving fast enough
+        val currentSpeed = lastLocation?.speed ?: 0f
+        if (currentSpeed < MIN_SPEED_FOR_EVENTS_MPS) {
+            return
+        }
 
         val longitudinalAccelerationG = isolateDrivingVectorAcceleration(event.values)
         if (abs(longitudinalAccelerationG) > SUDDEN_CHANGE_THRESHOLD_G) {
@@ -419,5 +438,8 @@ class TripTrackerService : LifecycleService(), SensorEventListener {
         private const val DRIVING_VECTOR_ALPHA = 0.95f
         private const val DRIVING_VECTOR_LEARNING_THRESHOLD = 0.15f
         private const val SUDDEN_CHANGE_THRESHOLD_G = 0.3f
+        private const val MIN_LOCATION_ACCURACY_METERS = 20.0f
+        private const val MIN_SPEED_DEADBAND_MPS = 1.0f
+        private const val MIN_SPEED_FOR_EVENTS_MPS = 2.2f
     }
 }

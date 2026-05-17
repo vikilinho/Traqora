@@ -19,19 +19,19 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -58,18 +58,24 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -82,6 +88,7 @@ import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 class MainActivity : ComponentActivity() {
 
@@ -112,6 +119,9 @@ private fun TraqoraDashboard(viewModel: TripDashboardViewModel) {
     var isStartingTrip by remember { mutableStateOf(false) }
     var isStoppingTrip by remember { mutableStateOf(false) }
     var hasRequiredPermissions by remember { mutableStateOf(context.hasTripTrackingPermissions()) }
+    val contentScrollState = rememberScrollState()
+
+    TrackScrollHaptics(contentScrollState)
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -119,12 +129,17 @@ private fun TraqoraDashboard(viewModel: TripDashboardViewModel) {
         hasRequiredPermissions = context.hasTripTrackingPermissions()
     }
 
+    LaunchedEffect(Unit) {
+        if (!hasRequiredPermissions) {
+            permissionLauncher.launch(tripTrackingPermissions())
+        }
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             AppBar(
-                isTracking = isTracking,
                 onBack = if (selectedTab == 1 && selectedTripSummary != null) {
                     { selectedTripSummary = null }
                 } else {
@@ -160,7 +175,7 @@ private fun TraqoraDashboard(viewModel: TripDashboardViewModel) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(contentScrollState)
                 .padding(innerPadding)
                 .padding(horizontal = 18.dp)
                 .padding(top = 82.dp, bottom = 18.dp),
@@ -174,9 +189,6 @@ private fun TraqoraDashboard(viewModel: TripDashboardViewModel) {
                     liveTripState = liveTripState,
                     hasRequiredPermissions = hasRequiredPermissions,
                     latestTripSummary = latestTripSummary,
-                    onRequestPermissions = {
-                        permissionLauncher.launch(tripTrackingPermissions())
-                    },
                     onStart = {
                         isStartingTrip = true
                         context.startTripTrackerService()
@@ -214,7 +226,9 @@ private fun TraqoraDashboard(viewModel: TripDashboardViewModel) {
 }
 
 @Composable
-private fun AppBar(isTracking: Boolean, onBack: (() -> Unit)? = null) {
+private fun AppBar(onBack: (() -> Unit)? = null) {
+    val hapticFeedback = LocalHapticFeedback.current
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -224,7 +238,7 @@ private fun AppBar(isTracking: Boolean, onBack: (() -> Unit)? = null) {
     ) {
         if (onBack != null) {
             IconButton(
-                onClick = onBack,
+                onClick = hapticAction(hapticFeedback, onBack),
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .size(48.dp)
@@ -238,39 +252,25 @@ private fun AppBar(isTracking: Boolean, onBack: (() -> Unit)? = null) {
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             Text(
-                text = "Traqora",
+                text = buildAnnotatedString {
+                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) {
+                        append("Tra")
+                    }
+                    withStyle(SpanStyle(color = Color(0xFF6D4C9F))) {
+                        append("qo")
+                    }
+                    withStyle(SpanStyle(color = Color(0xFFC2413B))) {
+                        append("ra")
+                    }
+                },
                 style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onBackground
+                fontWeight = FontWeight.ExtraBold
             )
             Text(
                 text = "Driving score",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        Row(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .clip(CircleShape)
-                .background(if (isTracking) Color(0xFFE7F8EF) else Color(0xFFF0F2F4))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(if (isTracking) Color(0xFF16A064) else Color(0xFF829096))
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = if (isTracking) "Live" else "Idle",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = if (isTracking) Color(0xFF0B6B43) else Color(0xFF586469)
             )
         }
     }
@@ -309,6 +309,8 @@ private fun BackArrowIcon() {
 
 @Composable
 private fun TraqoraBottomTabs(selectedTab: Int, onTabSelected: (Int) -> Unit) {
+    val hapticFeedback = LocalHapticFeedback.current
+
     NavigationBar(
         containerColor = MaterialTheme.colorScheme.surface,
         tonalElevation = 0.dp
@@ -323,14 +325,20 @@ private fun TraqoraBottomTabs(selectedTab: Int, onTabSelected: (Int) -> Unit) {
 
         NavigationBarItem(
             selected = selectedTab == 0,
-            onClick = { onTabSelected(0) },
+            onClick = {
+                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                onTabSelected(0)
+            },
             label = { BottomTabLabel("Home", selected = selectedTab == 0) },
             icon = {},
             colors = itemColors
         )
         NavigationBarItem(
             selected = selectedTab == 1,
-            onClick = { onTabSelected(1) },
+            onClick = {
+                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                onTabSelected(1)
+            },
             label = { BottomTabLabel("Trips history", selected = selectedTab == 1) },
             icon = {},
             colors = itemColors
@@ -355,17 +363,19 @@ private fun HomeTab(
     liveTripState: LiveTripState,
     hasRequiredPermissions: Boolean,
     latestTripSummary: TripSummary?,
-    onRequestPermissions: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(36.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(36.dp)
+    ) {
         ScoreSection(
             isTracking = isTracking,
             liveTripState = liveTripState,
-            hasRequiredPermissions = hasRequiredPermissions,
-            latestTripSummary = latestTripSummary,
-            onRequestPermissions = onRequestPermissions
+            latestTripSummary = latestTripSummary
         )
         CircularMetrics(
             isTracking = isTracking,
@@ -388,9 +398,7 @@ private fun HomeTab(
 private fun ScoreSection(
     isTracking: Boolean,
     liveTripState: LiveTripState,
-    hasRequiredPermissions: Boolean,
-    latestTripSummary: TripSummary?,
-    onRequestPermissions: () -> Unit
+    latestTripSummary: TripSummary?
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -401,15 +409,6 @@ private fun ScoreSection(
             score = if (isTracking) liveTripState.score else latestTripSummary?.score,
             modifier = Modifier.size(190.dp)
         )
-
-        if (!hasRequiredPermissions) {
-            OutlinedButton(
-                onClick = onRequestPermissions,
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text("Enable tracking")
-            }
-        }
     }
 }
 
@@ -470,37 +469,51 @@ private fun CircularMetrics(
     liveTripState: LiveTripState,
     latestTripSummary: TripSummary?
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        CircularMetric(
-            label = "Speed",
-            value = if (isTracking) formatMph(liveTripState.speedMps) else "-- mph"
-        )
-        CircularMetric(
-            label = "Distance",
-            value = when {
-                isTracking -> formatMiles(liveTripState.distanceMeters)
-                latestTripSummary != null -> formatMiles(latestTripSummary.distanceMeters)
-                else -> "-- mi"
-            }
-        )
-        CircularMetric(
-            label = "Harsh events",
-            value = when {
-                isTracking -> liveTripState.harshEventCount.toString()
-                latestTripSummary != null -> latestTripSummary.harshEventCount.toString()
-                else -> "--"
-            }
-        )
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val metricSize = ((maxWidth - 20.dp) / 3).coerceAtMost(118.dp)
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            CircularMetric(
+                label = "Speed",
+                value = if (isTracking) formatMph(liveTripState.speedMps) else "-- mph",
+                modifier = Modifier.size(metricSize)
+            )
+            CircularMetric(
+                label = "Distance",
+                valueColor = Color(0xFF6D4C9F),
+                value = when {
+                    isTracking -> formatMiles(liveTripState.distanceMeters)
+                    latestTripSummary != null -> formatMiles(latestTripSummary.distanceMeters)
+                    else -> "-- mi"
+                },
+                modifier = Modifier.size(metricSize)
+            )
+            CircularMetric(
+                label = "Harsh events",
+                valueColor = Color(0xFFC2413B),
+                value = when {
+                    isTracking -> liveTripState.harshEventCount.toString()
+                    latestTripSummary != null -> latestTripSummary.harshEventCount.toString()
+                    else -> "--"
+                },
+                modifier = Modifier.size(metricSize)
+            )
+        }
     }
 }
 
 @Composable
-private fun CircularMetric(label: String, value: String) {
+private fun CircularMetric(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface
+) {
     Card(
-        modifier = Modifier.size(118.dp),
+        modifier = modifier,
         shape = CircleShape,
         border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -517,7 +530,7 @@ private fun CircularMetric(label: String, value: String) {
                 text = value,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = valueColor
             )
             Text(
                 text = label,
@@ -538,41 +551,37 @@ private fun TrackingControls(
     onStart: () -> Unit,
     onStop: () -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    val hapticFeedback = LocalHapticFeedback.current
+    val isBusy = isStartingTrip || isStoppingTrip
+    val buttonText = when {
+        isStoppingTrip -> "Ending..."
+        isTracking -> "End trip"
+        isStartingTrip -> "Starting..."
+        else -> "Start trip"
+    }
+    val buttonEnabled = if (isTracking) {
+        !isStoppingTrip
+    } else {
+        canStart && !isBusy
+    }
+    val buttonAction = if (isTracking) onStop else onStart
+
+    Button(
+        onClick = hapticAction(hapticFeedback, buttonAction),
+        enabled = buttonEnabled,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(54.dp),
+        shape = RoundedCornerShape(8.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (isTracking) Color(0xFFC2413B) else MaterialTheme.colorScheme.primary
+        )
     ) {
-        Button(
-            onClick = onStart,
-            enabled = canStart && !isTracking && !isStartingTrip && !isStoppingTrip,
-            modifier = Modifier
-                .weight(1f)
-                .height(52.dp),
-            shape = RoundedCornerShape(8.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary
-            )
-        ) {
-            Text(
-                text = if (isStartingTrip) "Starting..." else "Start trip",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
-        OutlinedButton(
-            onClick = onStop,
-            enabled = isTracking && !isStoppingTrip,
-            modifier = Modifier
-                .weight(1f)
-                .height(52.dp),
-            shape = RoundedCornerShape(8.dp)
-        ) {
-            Text(
-                text = if (isStoppingTrip) "Ending..." else "End trip",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
+        Text(
+            text = buttonText,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 
@@ -620,10 +629,12 @@ private fun TripSummaryCard(
     onShare: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val hapticFeedback = LocalHapticFeedback.current
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onOpenSummary),
+            .hapticClickable(hapticFeedback, onClick = onOpenSummary),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -668,7 +679,7 @@ private fun TripSummaryCard(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 OutlinedButton(
-                    onClick = onShare,
+                    onClick = hapticAction(hapticFeedback, onShare),
                     modifier = Modifier
                         .weight(1f)
                         .height(52.dp),
@@ -681,7 +692,7 @@ private fun TripSummaryCard(
                     )
                 }
                 OutlinedButton(
-                    onClick = onDelete,
+                    onClick = hapticAction(hapticFeedback, onDelete),
                     modifier = Modifier
                         .weight(1f)
                         .height(52.dp),
@@ -704,6 +715,8 @@ private fun TripSummaryDetailScreen(
     summary: TripSummary,
     onShare: () -> Unit
 ) {
+    val hapticFeedback = LocalHapticFeedback.current
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(18.dp)
@@ -743,7 +756,7 @@ private fun TripSummaryDetailScreen(
         }
 
         OutlinedButton(
-            onClick = onShare,
+            onClick = hapticAction(hapticFeedback, onShare),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),
@@ -756,6 +769,41 @@ private fun TripSummaryDetailScreen(
             )
         }
     }
+}
+
+@Composable
+private fun TrackScrollHaptics(scrollState: ScrollState) {
+    val hapticFeedback = LocalHapticFeedback.current
+
+    LaunchedEffect(scrollState) {
+        var isFirstBucket = true
+        snapshotFlow { scrollState.value / SCROLL_HAPTIC_STEP_PX }
+            .distinctUntilChanged()
+            .collect {
+                if (isFirstBucket) {
+                    isFirstBucket = false
+                } else {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                }
+            }
+    }
+}
+
+private fun hapticAction(
+    hapticFeedback: HapticFeedback,
+    onClick: () -> Unit
+): () -> Unit = {
+    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+    onClick()
+}
+
+private fun Modifier.hapticClickable(
+    hapticFeedback: HapticFeedback,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+): Modifier = clickable(enabled = enabled) {
+    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+    onClick()
 }
 
 @Composable
@@ -1015,6 +1063,7 @@ private fun drawShareMetric(
 }
 
 private const val TRIP_STOP_REFRESH_DELAY_MS = 750L
+private const val SCROLL_HAPTIC_STEP_PX = 96
 
 private fun Context.hasTripTrackingPermissions(): Boolean {
     return tripTrackingPermissions().all { permission ->
@@ -1056,7 +1105,7 @@ private fun TraqoraDashboardPreview() {
     TraqoraTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
             Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                AppBar(isTracking = false)
+                AppBar()
                 HomeTab(
                     isTracking = false,
                     isStartingTrip = false,
@@ -1064,7 +1113,6 @@ private fun TraqoraDashboardPreview() {
                     liveTripState = LiveTripState(),
                     hasRequiredPermissions = true,
                     latestTripSummary = null,
-                    onRequestPermissions = {},
                     onStart = {},
                     onStop = {}
                 )

@@ -35,7 +35,11 @@ object TripLiveState {
             val deltaMeters = previousLocation?.distanceTo(location)?.takeIf {
                 it.isFinite() && it >= 0f
             } ?: 0f
-            val nextDistance = current.distanceMeters + deltaMeters
+            
+            // Only accumulate distance if the vehicle is actually moving
+            val speedToUse = if (location.hasSpeed()) location.speed else current.speedMps ?: 0f
+            val actualDelta = if (speedToUse > 0f) deltaMeters else 0f
+            val nextDistance = current.distanceMeters + actualDelta
 
             current.copy(
                 speedMps = if (location.hasSpeed()) location.speed else current.speedMps,
