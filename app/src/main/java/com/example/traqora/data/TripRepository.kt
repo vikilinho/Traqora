@@ -5,6 +5,7 @@ import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
+import com.example.traqora.TripScoreCalculator
 
 class TripRepository(private val tripDao: TripDao) {
 
@@ -51,7 +52,7 @@ class TripRepository(private val tripDao: TripDao) {
             harshEventCount = harshEventCount,
             locationSampleCount = locationEvents.size,
             averageSpeedMps = averageSpeedMps,
-            score = calculateScore(distanceMeters, harshEventCount)
+            score = TripScoreCalculator.calculateScoreFromEvents(events)
         )
     }
 
@@ -101,19 +102,6 @@ class TripRepository(private val tripDao: TripDao) {
         }
 
         return total
-    }
-
-    private fun calculateScore(distanceMeters: Double, harshEventCount: Int): Int {
-        if (distanceMeters <= 0.0 && harshEventCount == 0) return 100
-
-        val miles = distanceMeters * METERS_TO_MILES
-        val eventRatePenalty = if (miles > 0.1) {
-            ((harshEventCount / miles) * 10).roundToInt()
-        } else {
-            harshEventCount * 12
-        }
-
-        return (100 - eventRatePenalty).coerceIn(0, 100)
     }
 
     companion object {

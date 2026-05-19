@@ -85,10 +85,26 @@ import com.example.traqora.data.TripSummary
 import java.io.File
 import java.io.FileOutputStream
 import java.text.DateFormat
+import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.ui.graphics.graphicsLayer
 
 class MainActivity : ComponentActivity() {
 
@@ -107,21 +123,31 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private sealed interface ScreenState {
+    object Home : ScreenState
+    object History : ScreenState
+    data class Detail(val summary: TripSummary) : ScreenState
+}
+
 @Composable
 private fun TraqoraDashboard(viewModel: TripDashboardViewModel) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val liveTripState by TripLiveState.state.collectAsState()
-    val latestTripSummary = uiState.latestTripSummary
     val isTracking = liveTripState.isTracking
     var selectedTab by remember { mutableIntStateOf(0) }
     var selectedTripSummary by remember { mutableStateOf<TripSummary?>(null) }
     var isStartingTrip by remember { mutableStateOf(false) }
     var isStoppingTrip by remember { mutableStateOf(false) }
     var hasRequiredPermissions by remember { mutableStateOf(context.hasTripTrackingPermissions()) }
-    val contentScrollState = rememberScrollState()
 
-    TrackScrollHaptics(contentScrollState)
+    val currentScreenState = remember(selectedTab, selectedTripSummary) {
+        when {
+            selectedTab == 0 -> ScreenState.Home
+            selectedTripSummary != null -> ScreenState.Detail(selectedTripSummary!!)
+            else -> ScreenState.History
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -132,6 +158,12 @@ private fun TraqoraDashboard(viewModel: TripDashboardViewModel) {
     LaunchedEffect(Unit) {
         if (!hasRequiredPermissions) {
             permissionLauncher.launch(tripTrackingPermissions())
+        }
+    }
+
+    LaunchedEffect(hasRequiredPermissions) {
+        if (hasRequiredPermissions) {
+            ActivityTransitionHelper.registerForActivityTransitions(context)
         }
     }
 
@@ -172,53 +204,111 @@ private fun TraqoraDashboard(viewModel: TripDashboardViewModel) {
             selectedTripSummary = uiState.tripSummaries.firstOrNull { it.tripId == selectedId }
         }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(contentScrollState)
-                .padding(innerPadding)
-                .padding(horizontal = 18.dp)
-                .padding(top = 82.dp, bottom = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            if (selectedTab == 0) {
-                HomeTab(
-                    isTracking = isTracking,
-                    isStartingTrip = isStartingTrip,
-                    isStoppingTrip = isStoppingTrip,
-                    liveTripState = liveTripState,
-                    hasRequiredPermissions = hasRequiredPermissions,
-                    latestTripSummary = latestTripSummary,
-                    onStart = {
-                        isStartingTrip = true
-                        context.startTripTrackerService()
-                    },
-                    onStop = {
-                        isStoppingTrip = true
-                        context.stopTripTrackerService()
+        AnimatedContent(
+            targetState = currentScreenState,
+            transitionSpec = {
+                val initial = initialState
+                val target = targetState
+                when {
+                    initial is ScreenState.Home && target is ScreenState.History -> {
+                        slideIntoContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = tween(400, easing = FastOutSlowInEasing)
+                        ) + fadeIn(animationSpec = tween(400)) togetherWith
+                        slideOutOfContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = tween(400, easing = FastOutSlowInEasing)
+                        ) + fadeOut(animationSpec = tween(400))
                     }
-                )
-            } else {
-                val detailSummary = selectedTripSummary
-                if (detailSummary != null) {
-                    TripSummaryDetailScreen(
-                        summary = detailSummary,
-                        onShare = { context.shareTripCard(detailSummary) }
-                    )
-                } else {
-                    TripHistoryTab(
-                        tripSummaries = uiState.tripSummaries,
-                        onOpenSummary = { selectedTripSummary = it },
-                        onShare = { summary ->
-                            context.shareTripCard(summary)
-                        },
-                        onDelete = { summary ->
-                            if (selectedTripSummary?.tripId == summary.tripId) {
-                                selectedTripSummary = null
+                    initial is ScreenState.History && target is ScreenState.Home -> {
+                        slideIntoContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(400, easing = FastOutSlowInEasing)
+                        ) + fadeIn(animationSpec = tween(400)) togetherWith
+                        slideOutOfContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(400, easing = FastOutSlowInEasing)
+                        ) + fadeOut(animationSpec = tween(400))
+                    }
+                    initial is ScreenState.History && target is ScreenState.Detail -> {
+                        slideIntoContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Up,
+                            animationSpec = tween(450, easing = FastOutSlowInEasing)
+                        ) + fadeIn(animationSpec = tween(450)) togetherWith
+                        slideOutOfContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Up,
+                            animationSpec = tween(450, easing = FastOutSlowInEasing)
+                        ) + fadeOut(animationSpec = tween(450))
+                    }
+                    initial is ScreenState.Detail && target is ScreenState.History -> {
+                        slideIntoContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Down,
+                            animationSpec = tween(450, easing = FastOutSlowInEasing)
+                        ) + fadeIn(animationSpec = tween(450)) togetherWith
+                        slideOutOfContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Down,
+                            animationSpec = tween(450, easing = FastOutSlowInEasing)
+                        ) + fadeOut(animationSpec = tween(450))
+                    }
+                    else -> {
+                        fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
+                    }
+                }
+            },
+            label = "ScreenTransition",
+            modifier = Modifier.fillMaxSize()
+        ) { state ->
+            val scrollState = rememberScrollState()
+            TrackScrollHaptics(scrollState)
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .padding(innerPadding)
+                    .padding(horizontal = 18.dp)
+                    .padding(top = 82.dp, bottom = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
+                when (state) {
+                    is ScreenState.Home -> {
+                        HomeTab(
+                            isTracking = isTracking,
+                            isStartingTrip = isStartingTrip,
+                            isStoppingTrip = isStoppingTrip,
+                            liveTripState = liveTripState,
+                            hasRequiredPermissions = hasRequiredPermissions,
+                            onStart = {
+                                isStartingTrip = true
+                                context.startTripTrackerService()
+                            },
+                            onStop = {
+                                isStoppingTrip = true
+                                context.stopTripTrackerService()
                             }
-                            viewModel.deleteTrip(summary.tripId)
-                        }
-                    )
+                        )
+                    }
+                    is ScreenState.History -> {
+                        TripHistoryTab(
+                            tripSummaries = uiState.tripSummaries,
+                            onOpenSummary = { selectedTripSummary = it },
+                            onShare = { summary ->
+                                context.shareTripCard(summary)
+                            },
+                            onDelete = { summary ->
+                                if (selectedTripSummary?.tripId == summary.tripId) {
+                                    selectedTripSummary = null
+                                }
+                                viewModel.deleteTrip(summary.tripId)
+                            }
+                        )
+                    }
+                    is ScreenState.Detail -> {
+                        TripSummaryDetailScreen(
+                            summary = state.summary,
+                            onShare = { context.shareTripCard(state.summary) }
+                        )
+                    }
                 }
             }
         }
@@ -362,7 +452,6 @@ private fun HomeTab(
     isStoppingTrip: Boolean,
     liveTripState: LiveTripState,
     hasRequiredPermissions: Boolean,
-    latestTripSummary: TripSummary?,
     onStart: () -> Unit,
     onStop: () -> Unit
 ) {
@@ -374,13 +463,11 @@ private fun HomeTab(
     ) {
         ScoreSection(
             isTracking = isTracking,
-            liveTripState = liveTripState,
-            latestTripSummary = latestTripSummary
+            liveTripState = liveTripState
         )
         CircularMetrics(
             isTracking = isTracking,
-            liveTripState = liveTripState,
-            latestTripSummary = latestTripSummary
+            liveTripState = liveTripState
         )
         Spacer(modifier = Modifier.height(18.dp))
         TrackingControls(
@@ -397,8 +484,7 @@ private fun HomeTab(
 @Composable
 private fun ScoreSection(
     isTracking: Boolean,
-    liveTripState: LiveTripState,
-    latestTripSummary: TripSummary?
+    liveTripState: LiveTripState
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -406,7 +492,7 @@ private fun ScoreSection(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         ScoreRing(
-            score = if (isTracking) liveTripState.score else latestTripSummary?.score,
+            score = if (isTracking) liveTripState.score else null,
             modifier = Modifier.size(190.dp)
         )
     }
@@ -416,7 +502,12 @@ private fun ScoreSection(
 private fun ScoreRing(score: Int?, modifier: Modifier = Modifier) {
     val progressColor = MaterialTheme.colorScheme.primary
     val trackColor = Color(0xFFD8E0E2)
-    val progress = ((score ?: 0).coerceIn(0, 100) / 100f)
+    val targetProgress = ((score ?: 0).coerceIn(0, 100) / 100f)
+    val progress by animateFloatAsState(
+        targetValue = targetProgress,
+        animationSpec = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
+        label = "ScoreProgress"
+    )
 
     Box(
         modifier = modifier,
@@ -447,8 +538,9 @@ private fun ScoreRing(score: Int?, modifier: Modifier = Modifier) {
             )
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            val displayScore = if (score != null) (progress * 100).toInt() else null
             Text(
-                text = score?.toString() ?: "--",
+                text = displayScore?.toString() ?: "--",
                 style = MaterialTheme.typography.displayMedium,
                 fontWeight = FontWeight.ExtraBold,
                 color = MaterialTheme.colorScheme.onBackground
@@ -466,8 +558,7 @@ private fun ScoreRing(score: Int?, modifier: Modifier = Modifier) {
 @Composable
 private fun CircularMetrics(
     isTracking: Boolean,
-    liveTripState: LiveTripState,
-    latestTripSummary: TripSummary?
+    liveTripState: LiveTripState
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val metricSize = ((maxWidth - 20.dp) / 3).coerceAtMost(118.dp)
@@ -479,26 +570,21 @@ private fun CircularMetrics(
             CircularMetric(
                 label = "Speed",
                 value = if (isTracking) formatMph(liveTripState.speedMps) else "-- mph",
+                isPulseEnabled = isTracking,
                 modifier = Modifier.size(metricSize)
             )
             CircularMetric(
                 label = "Distance",
                 valueColor = Color(0xFF6D4C9F),
-                value = when {
-                    isTracking -> formatMiles(liveTripState.distanceMeters)
-                    latestTripSummary != null -> formatMiles(latestTripSummary.distanceMeters)
-                    else -> "-- mi"
-                },
+                value = if (isTracking) formatMiles(liveTripState.distanceMeters) else "-- mi",
+                isPulseEnabled = isTracking,
                 modifier = Modifier.size(metricSize)
             )
             CircularMetric(
                 label = "Harsh events",
                 valueColor = Color(0xFFC2413B),
-                value = when {
-                    isTracking -> liveTripState.harshEventCount.toString()
-                    latestTripSummary != null -> latestTripSummary.harshEventCount.toString()
-                    else -> "--"
-                },
+                value = if (isTracking) liveTripState.harshEventCount.toString() else "--",
+                isPulseEnabled = isTracking,
                 modifier = Modifier.size(metricSize)
             )
         }
@@ -510,10 +596,28 @@ private fun CircularMetric(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
-    valueColor: Color = MaterialTheme.colorScheme.onSurface
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
+    isPulseEnabled: Boolean = false
 ) {
+    val scale = if (isPulseEnabled) {
+        val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+        val animatedScale by infiniteTransition.animateFloat(
+            initialValue = 0.97f,
+            targetValue = 1.03f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1200, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "scalePulse"
+        )
+        animatedScale
+    } else {
+        1f
+    }
+
     Card(
-        modifier = modifier,
+        modifier = modifier
+            .graphicsLayer(scaleX = scale, scaleY = scale),
         shape = CircleShape,
         border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -566,6 +670,17 @@ private fun TrackingControls(
     }
     val buttonAction = if (isTracking) onStop else onStart
 
+    val targetButtonColor = when {
+        !buttonEnabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+        isTracking -> Color(0xFFC2413B)
+        else -> MaterialTheme.colorScheme.primary
+    }
+    val buttonColor by animateColorAsState(
+        targetValue = targetButtonColor,
+        animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing),
+        label = "ButtonColor"
+    )
+
     Button(
         onClick = hapticAction(hapticFeedback, buttonAction),
         enabled = buttonEnabled,
@@ -574,7 +689,8 @@ private fun TrackingControls(
             .height(54.dp),
         shape = RoundedCornerShape(8.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = if (isTracking) Color(0xFFC2413B) else MaterialTheme.colorScheme.primary
+            containerColor = buttonColor,
+            disabledContainerColor = buttonColor
         )
     ) {
         Text(
@@ -610,13 +726,54 @@ private fun TripHistoryTab(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
-            tripSummaries.forEach { summary ->
-                TripSummaryCard(
-                    summary = summary,
-                    onOpenSummary = { onOpenSummary(summary) },
-                    onShare = { onShare(summary) },
-                    onDelete = { onDelete(summary) }
+            val groupedTrips = remember(tripSummaries) {
+                groupTripSummariesByWeekAndDay(tripSummaries)
+            }
+
+            groupedTrips.forEach { weekGroup ->
+                TripWeekSection(
+                    weekGroup = weekGroup,
+                    onOpenSummary = onOpenSummary,
+                    onShare = onShare,
+                    onDelete = onDelete
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TripWeekSection(
+    weekGroup: TripWeekGroup,
+    onOpenSummary: (TripSummary) -> Unit,
+    onShare: (TripSummary) -> Unit,
+    onDelete: (TripSummary) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            text = weekGroup.label,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.ExtraBold,
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        weekGroup.days.forEach { dayGroup ->
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = dayGroup.label,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                dayGroup.trips.forEach { summary ->
+                    TripSummaryCard(
+                        summary = summary,
+                        onOpenSummary = { onOpenSummary(summary) },
+                        onShare = { onShare(summary) },
+                        onDelete = { onDelete(summary) }
+                    )
+                }
             }
         }
     }
@@ -1065,6 +1222,98 @@ private fun drawShareMetric(
 private const val TRIP_STOP_REFRESH_DELAY_MS = 750L
 private const val SCROLL_HAPTIC_STEP_PX = 96
 
+private data class TripWeekGroup(
+    val label: String,
+    val days: List<TripDayGroup>
+)
+
+private data class TripDayGroup(
+    val label: String,
+    val trips: List<TripSummary>
+)
+
+private fun groupTripSummariesByWeekAndDay(tripSummaries: List<TripSummary>): List<TripWeekGroup> {
+    val orderedTrips = tripSummaries.sortedByDescending { it.startedAtEpochMs }
+    return orderedTrips
+        .groupBy { weekStartEpochMs(it.startedAtEpochMs) }
+        .toSortedMap(compareByDescending { it })
+        .map { (weekStartEpochMs, weekTrips) ->
+            TripWeekGroup(
+                label = formatWeekLabel(weekStartEpochMs),
+                days = weekTrips
+                    .groupBy { dayStartEpochMs(it.startedAtEpochMs) }
+                    .toSortedMap(compareByDescending { it })
+                    .map { (dayStartEpochMs, dayTrips) ->
+                        TripDayGroup(
+                            label = formatDayGroupLabel(dayStartEpochMs),
+                            trips = dayTrips.sortedByDescending { it.startedAtEpochMs }
+                        )
+                    }
+            )
+        }
+}
+
+private fun weekStartEpochMs(epochMs: Long): Long {
+    return calendarAtStartOfDay(epochMs).apply {
+        firstDayOfWeek = Calendar.MONDAY
+        while (get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) {
+            add(Calendar.DAY_OF_MONTH, -1)
+        }
+    }.timeInMillis
+}
+
+private fun dayStartEpochMs(epochMs: Long): Long {
+    return calendarAtStartOfDay(epochMs).timeInMillis
+}
+
+private fun calendarAtStartOfDay(epochMs: Long): Calendar {
+    return Calendar.getInstance().apply {
+        timeInMillis = epochMs
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+}
+
+private fun formatWeekLabel(weekStartEpochMs: Long): String {
+    val now = System.currentTimeMillis()
+    val currentWeekStart = weekStartEpochMs(now)
+    val previousWeekStart = Calendar.getInstance().apply {
+        timeInMillis = currentWeekStart
+        add(Calendar.DAY_OF_MONTH, -7)
+    }.timeInMillis
+
+    return when (weekStartEpochMs) {
+        currentWeekStart -> "This week"
+        previousWeekStart -> "Last week"
+        else -> {
+            val start = Date(weekStartEpochMs)
+            val endCalendar = Calendar.getInstance().apply {
+                timeInMillis = weekStartEpochMs
+                add(Calendar.DAY_OF_MONTH, 6)
+            }
+            val monthDayFormatter = SimpleDateFormat("MMM d", Locale.US)
+            val endFormatter = SimpleDateFormat("MMM d, yyyy", Locale.US)
+            "${monthDayFormatter.format(start)} - ${endFormatter.format(endCalendar.time)}"
+        }
+    }
+}
+
+private fun formatDayGroupLabel(dayStartEpochMs: Long): String {
+    val todayStart = dayStartEpochMs(System.currentTimeMillis())
+    val yesterdayStart = Calendar.getInstance().apply {
+        timeInMillis = todayStart
+        add(Calendar.DAY_OF_MONTH, -1)
+    }.timeInMillis
+
+    return when (dayStartEpochMs) {
+        todayStart -> "Today"
+        yesterdayStart -> "Yesterday"
+        else -> SimpleDateFormat("EEEE, MMM d", Locale.US).format(Date(dayStartEpochMs))
+    }
+}
+
 private fun Context.hasTripTrackingPermissions(): Boolean {
     return tripTrackingPermissions().all { permission ->
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
@@ -1112,7 +1361,6 @@ private fun TraqoraDashboardPreview() {
                     isStoppingTrip = false,
                     liveTripState = LiveTripState(),
                     hasRequiredPermissions = true,
-                    latestTripSummary = null,
                     onStart = {},
                     onStop = {}
                 )

@@ -32,14 +32,15 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
-import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.sqrt
 
@@ -56,6 +57,7 @@ class TripTrackerService : LifecycleService(), SensorEventListener {
     private var isTracking = false
     private var activeTripId: String? = null
     private var tripStartJob: Job? = null
+    private var autoStopJob: Job? = null
 
     private val gravity = FloatArray(AXIS_COUNT)
     private val linearAcceleration = FloatArray(AXIS_COUNT)
@@ -116,6 +118,9 @@ class TripTrackerService : LifecycleService(), SensorEventListener {
                 stopTrackingAndFinish()
                 return Service.START_NOT_STICKY
             }
+            ACTION_VEHICLE_EXIT -> {
+                scheduleAutoStop()
+            }
             ACTION_START, null -> startTrackingIfAllowed()
             else -> Log.w(TAG, "Unknown action received: ${intent.action}")
         }
@@ -154,6 +159,8 @@ class TripTrackerService : LifecycleService(), SensorEventListener {
         isTracking = false
         activeTripId = null
         tripStartJob = null
+        autoStopJob?.cancel()
+        autoStopJob = null
         TripLiveState.stopTrip()
         serviceScope.cancel()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
@@ -161,6 +168,7 @@ class TripTrackerService : LifecycleService(), SensorEventListener {
     }
 
     private fun startTrackingIfAllowed() {
+        cancelAutoStop()
         if (isTracking) return
 
         if (!hasLocationPermission()) {
@@ -205,6 +213,26 @@ class TripTrackerService : LifecycleService(), SensorEventListener {
                 )
             }
             stopSelf()
+        }
+    }
+
+    private fun scheduleAutoStop() {
+        if (!isTracking) return
+
+        autoStopJob?.cancel()
+        autoStopJob = serviceScope.launch {
+            Log.d(TAG, "Scheduling auto-stop in 3 minutes due to vehicle exit...")
+            delay(180_000L) // 3 minutes
+            Log.d(TAG, "Vehicle exit grace period expired. Stopping trip automatically.")
+            stopTrackingAndFinish()
+        }
+    }
+
+    private fun cancelAutoStop() {
+        if (autoStopJob != null) {
+            Log.d(TAG, "Canceling scheduled auto-stop")
+            autoStopJob?.cancel()
+            autoStopJob = null
         }
     }
 
@@ -284,7 +312,7 @@ class TripTrackerService : LifecycleService(), SensorEventListener {
             tripDao.insertTelemetryEvent(
                 TelemetryEventEntity(
                     tripId = tripId,
-                    timestampEpochMs = System.currentTimeMillis(),
+                    timestampEpochMs = location.time.takeIf { it > 0L } ?: System.currentTimeMillis(),
                     type = TelemetryEventEntity.TYPE_LOCATION,
                     latitude = location.latitude,
                     longitude = location.longitude,
@@ -297,7 +325,7 @@ class TripTrackerService : LifecycleService(), SensorEventListener {
 
     private fun persistHarshAccelerationEvent(longitudinalAccelerationG: Float) {
         val tripId = activeTripId ?: return
-        TripLiveState.recordHarshEvent()
+        TripLiveState.recordHarshEvent(longitudinalAccelerationG)
 
         serviceScope.launch {
             tripStartJob?.join()
@@ -422,6 +450,7 @@ class TripTrackerService : LifecycleService(), SensorEventListener {
 
         const val ACTION_START = "com.example.traqora.action.START_TRIP_TRACKING"
         const val ACTION_STOP = "com.example.traqora.action.STOP_TRIP_TRACKING"
+        const val ACTION_VEHICLE_EXIT = "com.example.traqora.action.VEHICLE_EXIT"
 
         private const val NOTIFICATION_ID = 1001
         private const val NOTIFICATION_CHANNEL_ID = "trip_tracker"

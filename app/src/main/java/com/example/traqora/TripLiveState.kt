@@ -5,7 +5,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlin.math.roundToInt
+import kotlin.math.abs
+import kotlin.math.pow
 
 data class LiveTripState(
     val isTracking: Boolean = false,
@@ -14,6 +15,7 @@ data class LiveTripState(
     val speedMps: Float? = null,
     val distanceMeters: Double = 0.0,
     val harshEventCount: Int = 0,
+    val penaltyPoints: Double = 0.0,
     val score: Int = 100
 )
 
@@ -36,47 +38,44 @@ object TripLiveState {
                 it.isFinite() && it >= 0f
             } ?: 0f
             
-            // Only accumulate distance if the vehicle is actually moving
             val speedToUse = if (location.hasSpeed()) location.speed else current.speedMps ?: 0f
             val actualDelta = if (speedToUse > 0f) deltaMeters else 0f
             val nextDistance = current.distanceMeters + actualDelta
 
+            var nextPenalty = current.penaltyPoints
+            if (actualDelta > 0) {
+                val decayFactor = 0.5.pow(actualDelta / TripScoreCalculator.HALF_LIFE_METERS)
+                nextPenalty *= decayFactor
+            }
+
+            if (previousLocation != null && speedToUse > TripScoreCalculator.HIGH_SPEED_THRESHOLD_MPS) {
+                val elapsedMs = location.time - previousLocation.time
+                if (elapsedMs in 1..10000) {
+                    nextPenalty += (elapsedMs / 1000.0) * TripScoreCalculator.SPEED_PENALTY_PER_SECOND
+                }
+            }
+
             current.copy(
                 speedMps = if (location.hasSpeed()) location.speed else current.speedMps,
                 distanceMeters = nextDistance,
-                score = calculateScore(nextDistance, current.harshEventCount)
+                penaltyPoints = nextPenalty,
+                score = TripScoreCalculator.scoreFromPenaltyPoints(nextPenalty)
             )
         }
     }
 
-    fun recordHarshEvent() {
+    fun recordHarshEvent(gForce: Float) {
         mutableState.update { current ->
-            val nextHarshEventCount = current.harshEventCount + 1
+            val nextPenalty = current.penaltyPoints + (abs(gForce) * TripScoreCalculator.HARSH_EVENT_MULTIPLIER)
             current.copy(
-                harshEventCount = nextHarshEventCount,
-                score = calculateScore(current.distanceMeters, nextHarshEventCount)
+                harshEventCount = current.harshEventCount + 1,
+                penaltyPoints = nextPenalty,
+                score = TripScoreCalculator.scoreFromPenaltyPoints(nextPenalty)
             )
         }
     }
 
     fun stopTrip() {
-        mutableState.update {
-            it.copy(isTracking = false, speedMps = null)
-        }
+        mutableState.value = LiveTripState(isTracking = false)
     }
-
-    private fun calculateScore(distanceMeters: Double, harshEventCount: Int): Int {
-        if (distanceMeters <= 0.0 && harshEventCount == 0) return 100
-
-        val miles = distanceMeters * METERS_TO_MILES
-        val eventRatePenalty = if (miles > 0.1) {
-            ((harshEventCount / miles) * 10).roundToInt()
-        } else {
-            harshEventCount * 12
-        }
-
-        return (100 - eventRatePenalty).coerceIn(0, 100)
-    }
-
-    private const val METERS_TO_MILES = 0.000621371
 }

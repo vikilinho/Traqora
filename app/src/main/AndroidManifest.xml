@@ -37,6 +37,10 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
+        <receiver
+            android:name=".ActivityTransitionReceiver"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
