@@ -35,7 +35,10 @@ class TripRepository(private val tripDao: TripDao) {
     private suspend fun buildTripSummary(trip: TripEntity): TripSummary {
         val events = tripDao.getTelemetryEventsForTrip(trip.id)
         val locationEvents = events.filter { it.type == TelemetryEventEntity.TYPE_LOCATION }
-        val harshEventCount = events.count { it.type == TelemetryEventEntity.TYPE_HARSH_ACCELERATION }
+        val harshAccelerationCount = events.count { it.type == TelemetryEventEntity.TYPE_HARSH_ACCELERATION }
+        val harshBrakingCount = events.count { it.type == TelemetryEventEntity.TYPE_HARSH_BRAKING }
+        val harshCorneringCount = events.count { it.type == TelemetryEventEntity.TYPE_HARSH_CORNERING }
+        val harshEventCount = harshAccelerationCount + harshBrakingCount + harshCorneringCount
         val distanceMeters = calculateDistanceMeters(locationEvents)
         val averageSpeedMps = locationEvents
             .mapNotNull { it.speedMps }
@@ -50,6 +53,9 @@ class TripRepository(private val tripDao: TripDao) {
             status = trip.status,
             distanceMeters = distanceMeters,
             harshEventCount = harshEventCount,
+            harshAccelerationCount = harshAccelerationCount,
+            harshBrakingCount = harshBrakingCount,
+            harshCorneringCount = harshCorneringCount,
             locationSampleCount = locationEvents.size,
             averageSpeedMps = averageSpeedMps,
             score = TripScoreCalculator.calculateScoreFromEvents(events)
@@ -67,7 +73,7 @@ class TripRepository(private val tripDao: TripDao) {
             appendLine("Traqora trip summary")
             appendLine("Score: ${summary.score}/100")
             appendLine("Distance: ${String.format(Locale.US, "%.2f mi", miles)}")
-            appendLine("Harsh events: ${summary.harshEventCount}")
+            appendLine("Harsh events: ${summary.harshEventCount} (Accel: ${summary.harshAccelerationCount}, Brake: ${summary.harshBrakingCount}, Corner: ${summary.harshCorneringCount})")
             appendLine("Location samples: ${summary.locationSampleCount}")
             appendLine("Average speed: ${averageMph?.let { String.format(Locale.US, "%.0f mph", it) } ?: "Not available"}")
             appendLine("Started: $started")

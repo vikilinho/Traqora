@@ -48,7 +48,10 @@ object TripScoreCalculator {
                     }
                 }
                 previousLocationEvent = event
-            } else if (event.type == TelemetryEventEntity.TYPE_HARSH_ACCELERATION) {
+            } else if (event.type == TelemetryEventEntity.TYPE_HARSH_ACCELERATION ||
+                event.type == TelemetryEventEntity.TYPE_HARSH_BRAKING ||
+                event.type == TelemetryEventEntity.TYPE_HARSH_CORNERING
+            ) {
                 val gForce = event.value ?: 0.3f
                 penaltyPoints += abs(gForce) * HARSH_EVENT_MULTIPLIER
             }

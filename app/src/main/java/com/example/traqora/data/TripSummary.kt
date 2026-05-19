@@ -7,6 +7,9 @@ data class TripSummary(
     val status: String,
     val distanceMeters: Double,
     val harshEventCount: Int,
+    val harshAccelerationCount: Int,
+    val harshBrakingCount: Int,
+    val harshCorneringCount: Int,
     val locationSampleCount: Int,
     val averageSpeedMps: Float?,
     val score: Int

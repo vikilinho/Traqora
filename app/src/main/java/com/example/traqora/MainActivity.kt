@@ -66,6 +66,10 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.foundation.background
+import androidx.compose.material3.Divider
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -904,11 +908,36 @@ private fun TripSummaryDetailScreen(
             ) {
                 SummaryRow("Status", summary.status.replaceFirstChar { it.titlecase(Locale.US) })
                 SummaryRow("Distance", formatMiles(summary.distanceMeters))
-                SummaryRow("Harsh events", summary.harshEventCount.toString())
                 SummaryRow("Average speed", summary.averageSpeedMps?.let(::formatMph) ?: "Not available")
                 SummaryRow("Location samples", summary.locationSampleCount.toString())
                 SummaryRow("Started", formatDate(summary.startedAtEpochMs))
                 SummaryRow("Ended", summary.endedAtEpochMs?.let(::formatDate) ?: "In progress")
+
+                Spacer(modifier = Modifier.height(4.dp))
+                Divider(color = MaterialTheme.colorScheme.outline)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Harsh Events",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = summary.harshEventCount.toString(),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (summary.harshEventCount > 0) Color(0xFFC2413B) else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                HarshEventBreakdownRow("Harsh Acceleration", summary.harshAccelerationCount, Color(0xFFE28743)) { HarshAccelerationIcon(it) }
+                HarshEventBreakdownRow("Harsh Braking", summary.harshBrakingCount, Color(0xFFC2413B)) { HarshBrakingIcon(it) }
+                HarshEventBreakdownRow("Harsh Cornering", summary.harshCorneringCount, Color(0xFF2E8BC0)) { HarshCorneringIcon(it) }
             }
         }
 
@@ -981,6 +1010,133 @@ private fun SummaryRow(label: String, value: String) {
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+@Composable
+private fun HarshEventBreakdownRow(
+    label: String,
+    count: Int,
+    color: Color,
+    icon: @Composable (Color) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(color.copy(alpha = 0.12f), shape = RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                icon(color)
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text(
+            text = count.toString(),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = if (count > 0) color else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun HarshAccelerationIcon(color: Color) {
+    Canvas(modifier = Modifier.size(16.dp)) {
+        val strokeWidth = 2.dp.toPx()
+        val path1 = Path().apply {
+            moveTo(size.width * 0.2f, size.height * 0.75f)
+            lineTo(size.width * 0.5f, size.height * 0.45f)
+            lineTo(size.width * 0.8f, size.height * 0.75f)
+        }
+        drawPath(
+            path = path1,
+            color = color,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        )
+        val path2 = Path().apply {
+            moveTo(size.width * 0.2f, size.height * 0.5f)
+            lineTo(size.width * 0.5f, size.height * 0.2f)
+            lineTo(size.width * 0.8f, size.height * 0.5f)
+        }
+        drawPath(
+            path = path2,
+            color = color,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        )
+    }
+}
+
+@Composable
+private fun HarshBrakingIcon(color: Color) {
+    Canvas(modifier = Modifier.size(16.dp)) {
+        val strokeWidth = 2.dp.toPx()
+        val path = Path().apply {
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            val r = size.width * 0.45f
+            for (i in 0 until 8) {
+                val angle = Math.toRadians((i * 45 - 22.5).toDouble())
+                val x = cx + r * kotlin.math.cos(angle).toFloat()
+                val y = cy + r * kotlin.math.sin(angle).toFloat()
+                if (i == 0) moveTo(x, y) else lineTo(x, y)
+            }
+            close()
+        }
+        drawPath(
+            path = path,
+            color = color,
+            style = Stroke(width = strokeWidth, join = StrokeJoin.Round)
+        )
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.32f, size.height * 0.5f),
+            end = Offset(size.width * 0.68f, size.height * 0.5f),
+            strokeWidth = strokeWidth * 1.5f,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+@Composable
+private fun HarshCorneringIcon(color: Color) {
+    Canvas(modifier = Modifier.size(16.dp)) {
+        val strokeWidth = 2.dp.toPx()
+        val path = Path().apply {
+            moveTo(size.width * 0.75f, size.height * 0.85f)
+            quadraticBezierTo(
+                size.width * 0.75f, size.height * 0.35f,
+                size.width * 0.3f, size.height * 0.35f
+            )
+        }
+        drawPath(
+            path = path,
+            color = color,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+        )
+        val arrowhead = Path().apply {
+            moveTo(size.width * 0.45f, size.height * 0.18f)
+            lineTo(size.width * 0.22f, size.height * 0.35f)
+            lineTo(size.width * 0.45f, size.height * 0.52f)
+        }
+        drawPath(
+            path = arrowhead,
+            color = color,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
         )
     }
 }

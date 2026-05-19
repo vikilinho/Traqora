@@ -16,6 +16,9 @@ class TripRepositoryShareTextTest {
             status = TripEntity.STATUS_ACTIVE,
             distanceMeters = 1609.344,
             harshEventCount = 2,
+            harshAccelerationCount = 1,
+            harshBrakingCount = 1,
+            harshCorneringCount = 0,
             locationSampleCount = 42,
             averageSpeedMps = 13.4112f,
             score = 92
@@ -26,7 +29,7 @@ class TripRepositoryShareTextTest {
         assertTrue(shareText.contains("Traqora trip summary"))
         assertTrue(shareText.contains("Score: 92/100"))
         assertTrue(shareText.contains("Distance: 1.00 mi"))
-        assertTrue(shareText.contains("Harsh events: 2"))
+        assertTrue(shareText.contains("Harsh events: 2 (Accel: 1, Brake: 1, Corner: 0)"))
         assertTrue(shareText.contains("Location samples: 42"))
         assertTrue(shareText.contains("Average speed: 30 mph"))
         assertTrue(shareText.contains("Ended: In progress"))

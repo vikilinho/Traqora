@@ -137,13 +137,42 @@ class TripTrackerService : LifecycleService(), SensorEventListener {
             return
         }
 
-        val longitudinalAccelerationG = isolateDrivingVectorAcceleration(event.values)
-        if (abs(longitudinalAccelerationG) > SUDDEN_CHANGE_THRESHOLD_G) {
-            persistHarshAccelerationEvent(longitudinalAccelerationG)
+        val longitudinalG = isolateDrivingVectorAcceleration(event.values)
+        val gravityNorm = FloatArray(AXIS_COUNT) { gravity[it] }.apply { normalizeInPlace() }
+        val lateralVector = gravityNorm.cross(drivingVector).apply { normalizeInPlace() }
+        val lateralG = linearAcceleration.dot(lateralVector) / SensorManager.GRAVITY_EARTH
+
+        if (longitudinalG > SUDDEN_CHANGE_THRESHOLD_G) {
+            persistHarshEvent(
+                TelemetryEventEntity.TYPE_HARSH_ACCELERATION,
+                longitudinalG,
+                "Sudden acceleration: ${"%.3f".format(longitudinalG)}g"
+            )
             Log.w(
                 TAG,
-                "Driving alert: sudden longitudinal change=${"%.3f".format(longitudinalAccelerationG)}g, " +
-                    "threshold=${SUDDEN_CHANGE_THRESHOLD_G}g"
+                "Driving alert: sudden acceleration=${"%.3f".format(longitudinalG)}g"
+            )
+        } else if (longitudinalG < -SUDDEN_CHANGE_THRESHOLD_G) {
+            persistHarshEvent(
+                TelemetryEventEntity.TYPE_HARSH_BRAKING,
+                longitudinalG,
+                "Sudden braking: ${"%.3f".format(longitudinalG)}g"
+            )
+            Log.w(
+                TAG,
+                "Driving alert: sudden braking=${"%.3f".format(longitudinalG)}g"
+            )
+        }
+
+        if (abs(lateralG) > SUDDEN_CHANGE_THRESHOLD_G) {
+            persistHarshEvent(
+                TelemetryEventEntity.TYPE_HARSH_CORNERING,
+                lateralG,
+                "Harsh cornering: ${"%.3f".format(lateralG)}g"
+            )
+            Log.w(
+                TAG,
+                "Driving alert: harsh cornering=${"%.3f".format(lateralG)}g"
             )
         }
     }
@@ -323,9 +352,9 @@ class TripTrackerService : LifecycleService(), SensorEventListener {
         }
     }
 
-    private fun persistHarshAccelerationEvent(longitudinalAccelerationG: Float) {
+    private fun persistHarshEvent(type: String, gForce: Float, message: String) {
         val tripId = activeTripId ?: return
-        TripLiveState.recordHarshEvent(longitudinalAccelerationG)
+        TripLiveState.recordHarshEvent(gForce)
 
         serviceScope.launch {
             tripStartJob?.join()
@@ -333,12 +362,20 @@ class TripTrackerService : LifecycleService(), SensorEventListener {
                 TelemetryEventEntity(
                     tripId = tripId,
                     timestampEpochMs = System.currentTimeMillis(),
-                    type = TelemetryEventEntity.TYPE_HARSH_ACCELERATION,
-                    value = longitudinalAccelerationG,
-                    message = "Sudden longitudinal acceleration exceeded ${SUDDEN_CHANGE_THRESHOLD_G}g"
+                    type = type,
+                    value = gForce,
+                    message = message
                 )
             )
         }
+    }
+
+    private fun FloatArray.cross(other: FloatArray): FloatArray {
+        return floatArrayOf(
+            this[AXIS_Y] * other[AXIS_Z] - this[AXIS_Z] * other[AXIS_Y],
+            this[AXIS_Z] * other[AXIS_X] - this[AXIS_X] * other[AXIS_Z],
+            this[AXIS_X] * other[AXIS_Y] - this[AXIS_Y] * other[AXIS_X]
+        )
     }
 
     private fun isolateDrivingVectorAcceleration(values: FloatArray): Float {

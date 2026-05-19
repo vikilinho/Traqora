@@ -20,6 +20,31 @@ class TripScoreCalculatorTest {
     }
 
     @Test
+    fun `braking and cornering events apply penalty points correctly`() {
+        val events = listOf(
+            TelemetryEventEntity(
+                tripId = TRIP_ID,
+                timestampEpochMs = 1_000L,
+                type = TelemetryEventEntity.TYPE_HARSH_BRAKING,
+                value = -0.6f
+            ),
+            TelemetryEventEntity(
+                tripId = TRIP_ID,
+                timestampEpochMs = 2_000L,
+                type = TelemetryEventEntity.TYPE_HARSH_CORNERING,
+                value = 0.5f
+            )
+        )
+
+        val penalty = TripScoreCalculator.calculatePenaltyPointsFromEvents(events)
+        val score = TripScoreCalculator.calculateScoreFromEvents(events)
+
+        // Penalty = 0.6 * 20.0 + 0.5 * 20.0 = 12.0 + 10.0 = 22.0
+        assertEquals(22.0, penalty, 0.001)
+        assertEquals(78, score)
+    }
+
+    @Test
     fun `safe driving over one half life halves existing penalty`() {
         val events = listOf(
             harshEvent(timestampEpochMs = 1_000L, gForce = 1.0f),

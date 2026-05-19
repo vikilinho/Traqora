@@ -32,5 +32,7 @@ data class TelemetryEventEntity(
     companion object {
         const val TYPE_LOCATION = "location"
         const val TYPE_HARSH_ACCELERATION = "harsh_acceleration"
+        const val TYPE_HARSH_BRAKING = "harsh_braking"
+        const val TYPE_HARSH_CORNERING = "harsh_cornering"
     }
 }
